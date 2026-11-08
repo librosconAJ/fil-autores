@@ -1,0 +1,35 @@
+name: Actualizar directorio FIL
+
+on:
+  schedule:
+    - cron: '7 0 * * *'
+      timezone: America/Mexico_City
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Preparar Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: pip install requests beautifulsoup4
+
+      - name: Recopilar eventos y firmas y actualizar la página
+        run: python scripts/actualizar_fil.py
+
+      - name: Guardar cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet || git commit -m "Actualizar directorio FIL"
+          git push
