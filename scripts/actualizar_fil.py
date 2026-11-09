@@ -145,7 +145,7 @@ def main() -> int:
     updated = re.sub(r"const DATA=\[.*?\];", "const DATA=" + encoded + ";", template, count=1, flags=re.S)
     today = f"{dt.date.today().day} de {['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][dt.date.today().month-1]} de {dt.date.today().year}"
     updated = re.sub(r"<div class=\"notice\">.*?</div>",
-                     f"<div class=\"notice\"><b>Actualizado al {today}:</b> {len(data)} autores · {event_cards} fichas de presentaciones · {signing_cards} fichas de firmas ({event_participations + signing_participations} participaciones individuales).</div>", updated, count=1, flags=re.S)
+                     f"<div class=\"notice\"><b>Actualizado al {today}:</b> {len(data)} autores · {event_cards} presentaciones · {signing_cards} firmas.</div>", updated, count=1, flags=re.S)
     temp = OUTPUT.with_suffix(".html.tmp")
     temp.write_text(updated, encoding="utf-8")
     temp.replace(OUTPUT)
