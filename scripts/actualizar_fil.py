@@ -101,25 +101,49 @@ def main() -> int:
     except (urllib.error.URLError, TimeoutError, RuntimeError, UnicodeError) as exc:
         print(f"No se pudo completar la consulta ({exc}). index.html quedó intacto.", file=sys.stderr)
         return 1
-    people: dict[str, dict] = {}
+    # Start with the last published data: parsing of individual cards can miss
+    # names on group/collective listings, so a refresh must never erase entries.
+    match = re.search(r"const DATA=(\[.*?\]);", template, re.S)
+    try:
+        existing = json.loads(match.group(1))
+    except (AttributeError, json.JSONDecodeError) as exc:
+        print(f"No se pudo leer la base publicada ({exc}); index.html quedó intacto.", file=sys.stderr)
+        return 2
+    people: dict[str, dict] = {person["n"]: person for person in existing}
+    # Normalize only for matching so accents and case do not create duplicates.
+    def key(value: str) -> str:
+        import unicodedata
+        return " ".join(unicodedata.normalize("NFD", value).encode("ascii", "ignore").decode().casefold().split())
+    names = {key(name): name for name in people}
     for author, activity in events + signings:
-        person = people.setdefault(author, {"n": author, "a": []})
-        if activity not in person["a"]:
+        existing_name = names.get(key(author), author)
+        person = people.setdefault(existing_name, {"n": existing_name, "a": []})
+        names.setdefault(key(author), existing_name)
+        same = next((item for item in person["a"] if item.get("k") == activity["k"]
+                     and item.get("d") == activity["d"] and item.get("t", "").casefold() == activity["t"].casefold()), None)
+        if same:
+            # Refresh official details and status, removing flags when FIL clears them.
+            same.update(activity)
+            for flag in ("pr", "sold"):
+                if flag not in activity:
+                    same.pop(flag, None)
+        else:
             person["a"].append(activity)
     data = sorted(people.values(), key=lambda item: item["n"].casefold())
     if not data:
         print("Las fuentes no devolvieron autores identificables; no se modificó index.html.", file=sys.stderr)
         return 1
-    activities = sum(len(person["a"]) for person in data)
+    events = sum(1 for person in data for activity in person["a"] if activity.get("k") == "Evento")
+    signings = sum(1 for person in data for activity in person["a"] if activity.get("k") == "Firma")
     encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     updated = re.sub(r"const DATA=\[.*?\];", "const DATA=" + encoded + ";", template, count=1, flags=re.S)
-    today = dt.date.today().strftime("%-d de %B de %Y") if sys.platform != "win32" else f"{dt.date.today().day} de {['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][dt.date.today().month-1]} de {dt.date.today().year}"
-    updated = re.sub(r"Actualizado al [^<]*:</b>.*?</div>",
-                     f"Actualizado al {today}:</b> {len(data)} autores y {activities} eventos.</div>", updated, count=1, flags=re.S)
+    today = f"{dt.date.today().day} de {['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][dt.date.today().month-1]} de {dt.date.today().year}"
+    updated = re.sub(r"<div class=\"notice\">.*?</div>",
+                     f"<div class=\"notice\"><b>Actualizado al {today}:</b> {len(data)} autores · {events} presentaciones · {signings} firmas.</div>", updated, count=1, flags=re.S)
     temp = OUTPUT.with_suffix(".html.tmp")
     temp.write_text(updated, encoding="utf-8")
     temp.replace(OUTPUT)
-    print(f"Actualizado: {len(data)} autores, {activities} actividades.")
+    print(f"Actualizado: {len(data)} autores, {events} presentaciones y {signings} firmas.")
     print(f"Páginas recorridas: r=6: {event_pages}; r=13: {signing_pages}.")
     print(f"Archivo: {OUTPUT}")
     return 0
